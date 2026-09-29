@@ -57,6 +57,7 @@ class Task:
         completed: bool = False,
         category: str = "general",
     ):
+        """Create a task; raises ValueError for an unrecognized frequency."""
         if frequency not in FREQUENCY_INTERVALS:
             raise ValueError(f"Unknown frequency {frequency!r}; expected one of {list(FREQUENCY_INTERVALS)}")
 
@@ -71,13 +72,16 @@ class Task:
     # -- behavior -----------------------------------------------------------
 
     def mark_complete(self) -> None:
+        """Flip this task's status to completed."""
         self.completed = True
 
     def is_overdue(self, now: Optional[datetime] = None) -> bool:
+        """True if this task is still pending and its time has passed."""
         now = now or datetime.now()
         return (not self.completed) and self.scheduled_time < now
 
     def recurrence_interval(self) -> Optional[timedelta]:
+        """The gap between occurrences for this task's frequency, or None if one-off."""
         return FREQUENCY_INTERVALS[self.frequency]
 
     def next_occurrence(self) -> Optional["Task"]:
@@ -104,6 +108,7 @@ class Task:
     # -- display --------------------------------------------------------------
 
     def __repr__(self) -> str:
+        """Debug-friendly summary: id, pet, description, time, status."""
         status = "done" if self.completed else "pending"
         pet_name = self.pet.name if self.pet else "?"
         return f"<Task #{self.task_id} {pet_name}: {self.description!r} @ {self.scheduled_time:%Y-%m-%d %H:%M} ({status})>"
@@ -111,6 +116,7 @@ class Task:
     # -- persistence --------------------------------------------------------
 
     def to_dict(self) -> dict:
+        """Serialize this task to a JSON-friendly dict."""
         return {
             "task_id": self.task_id,
             "description": self.description,
@@ -122,6 +128,7 @@ class Task:
 
     @staticmethod
     def from_dict(data: dict) -> "Task":
+        """Rebuild a Task from a dict produced by to_dict()."""
         task = Task(
             description=data["description"],
             scheduled_time=datetime.fromisoformat(data["scheduled_time"]),
@@ -137,6 +144,7 @@ class Pet:
     """A pet's details plus the list of Tasks that belong to it."""
 
     def __init__(self, name: str, species: str, breed: str = "", age=None, weight=None, notes: str = ""):
+        """Create a pet with an empty task list."""
         self.name = name
         self.species = species
         self.breed = breed
@@ -146,24 +154,29 @@ class Pet:
         self.tasks: list[Task] = []
 
     def add_task(self, task: Task) -> Task:
+        """Attach a task to this pet, setting its back-reference."""
         task.pet = self
         self.tasks.append(task)
         return task
 
     def remove_task(self, task_id: int) -> None:
+        """Drop the task with this id from this pet's task list."""
         self.tasks = [t for t in self.tasks if t.task_id != task_id]
 
     def get_tasks(self, include_completed: bool = True) -> list[Task]:
+        """This pet's tasks, optionally excluding completed ones."""
         if include_completed:
             return list(self.tasks)
         return [t for t in self.tasks if not t.completed]
 
     def __repr__(self) -> str:
+        """Debug-friendly summary: name, species, task count."""
         return f"<Pet {self.name} ({self.species}), {len(self.tasks)} task(s)>"
 
     # -- persistence --------------------------------------------------------
 
     def to_dict(self) -> dict:
+        """Serialize this pet (and its tasks) to a JSON-friendly dict."""
         return {
             "name": self.name,
             "species": self.species,
@@ -176,6 +189,7 @@ class Pet:
 
     @staticmethod
     def from_dict(data: dict) -> "Pet":
+        """Rebuild a Pet (and its tasks) from a dict produced by to_dict()."""
         pet = Pet(
             name=data["name"],
             species=data["species"],
@@ -193,42 +207,43 @@ class Owner:
     """Manages multiple Pets and provides access to all their tasks."""
 
     def __init__(self, name: str):
+        """Create an owner with no pets yet."""
         self.name = name
         self.pets: dict[str, Pet] = {}
 
     def add_pet(self, pet: Pet) -> None:
+        """Register a pet; raises ValueError if the name is already taken."""
         if pet.name in self.pets:
             raise ValueError(f"Pet named {pet.name!r} already exists")
         self.pets[pet.name] = pet
 
     def remove_pet(self, name: str) -> None:
+        """Drop a pet (and thus its tasks) from this owner."""
         del self.pets[name]
 
     def get_pet(self, name: str) -> Pet:
+        """Look up one pet by name."""
         return self.pets[name]
 
     def list_pets(self) -> list[Pet]:
+        """All pets belonging to this owner."""
         return list(self.pets.values())
 
     def get_all_tasks(self) -> list[Task]:
-        """Flatten every pet's task list into one collection.
-
-        This is the single aggregation point for the whole household: the
-        Scheduler calls this instead of reading any one Pet's task list, so
-        it always sees every pet's tasks and stays correct as pets/tasks are
-        added or removed.
-        """
+        """Flatten every pet's task list into one collection, the single aggregation point the Scheduler reads from."""
         all_tasks: list[Task] = []
         for pet in self.pets.values():
             all_tasks.extend(pet.tasks)
         return all_tasks
 
     def __repr__(self) -> str:
+        """Debug-friendly summary: name, pet count."""
         return f"<Owner {self.name}, {len(self.pets)} pet(s)>"
 
     # -- persistence --------------------------------------------------------
 
     def save(self, path: str) -> None:
+        """Write this owner and all their pets/tasks to a JSON file."""
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {"name": self.name, "pets": [p.to_dict() for p in self.pets.values()]}
@@ -236,6 +251,7 @@ class Owner:
 
     @staticmethod
     def load(path: str) -> "Owner":
+        """Rebuild an Owner (and all their pets/tasks) from a JSON file written by save()."""
         payload = json.loads(Path(path).read_text())
         owner = Owner(payload["name"])
         for pet_data in payload["pets"]:
@@ -244,19 +260,14 @@ class Owner:
 
 
 class Scheduler:
-    """The "brain": retrieves, organizes, and manages tasks across all pets.
-
-    It never stores its own copy of tasks and never reaches into a single
-    Pet directly. Every query goes through owner.get_all_tasks(), so the
-    Scheduler automatically reflects whichever pets/tasks the Owner
-    currently holds -- add a pet, or a task, or complete one, and the very
-    next query already accounts for it.
-    """
+    """The "brain": retrieves, organizes, and manages tasks across all pets via Owner.get_all_tasks(), never a single Pet directly."""
 
     def __init__(self, owner: Owner):
+        """Bind this scheduler to the owner whose tasks it will manage."""
         self.owner = owner
 
     def _pending(self, pet_name: Optional[str] = None) -> list[Task]:
+        """Every not-yet-completed task, optionally filtered to one pet."""
         tasks = self.owner.get_all_tasks()
         if pet_name is not None:
             tasks = [t for t in tasks if t.pet.name == pet_name]
@@ -270,12 +281,14 @@ class Scheduler:
         return nsmallest(n, pending, key=lambda t: t.priority_key(now))
 
     def get_overdue_tasks(self, pet_name: Optional[str] = None, now=None) -> list[Task]:
+        """Pending tasks whose time has passed, soonest-overdue first."""
         now = now or datetime.now()
         pending = self._pending(pet_name)
         late = [t for t in pending if t.is_overdue(now)]
         return sorted(late, key=lambda t: t.scheduled_time)
 
     def get_task_by_id(self, task_id: int) -> Optional[Task]:
+        """Find one task by id across every pet, or None if it doesn't exist."""
         for task in self.owner.get_all_tasks():
             if task.task_id == task_id:
                 return task

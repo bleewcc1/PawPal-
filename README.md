@@ -4,6 +4,30 @@ A smart pet care management system. Tracks feedings, walks, medications, and
 appointments across multiple pets, and uses a priority-based scheduling
 algorithm to surface what needs attention first.
 
+## Implementation Summary
+
+The core (`pawpal_system.py`) is four small classes that each do one job and
+compose into the whole system. A **Task** is the atomic unit -- a
+description, a scheduled time, a frequency, and a completion flag. A **Pet**
+just owns a list of its own `Task`s. An **Owner** owns a household of `Pet`s
+and exposes `get_all_tasks()`, which flattens every pet's list into one
+combined collection. The **Scheduler** is the only class that does any
+"thinking": it never reaches into a `Pet` directly, it always asks the
+`Owner` for the full task list via `get_all_tasks()`, then ranks whatever
+comes back by overdue status, category urgency (medication > appointment >
+feeding > walk), and soonest due time. That one indirection --
+Scheduler → Owner → Pet -- is what makes the ranking correct across an
+arbitrary number of pets instead of just one, and it's what
+`tests/test_owner.py` and `tests/test_scheduler.py` exercise directly.
+
+The rest of the system builds on top of that core without changing it:
+`main.py` is a CLI script that wires up a sample `Owner`/`Pet`s/`Task`s and
+prints the `Scheduler`'s ranked output, used to verify the logic works
+before any UI touches it, and the `pytest` suite in `tests/` locks in that
+same behavior (completion, overdue detection, recurrence, multi-pet
+aggregation, and priority ranking) so future changes can't silently break
+it.
+
 ## Architecture
 
 Core logic lives in `pawpal_system.py`, with four classes:
