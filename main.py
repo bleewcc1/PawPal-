@@ -10,24 +10,44 @@ from datetime import datetime, timedelta
 
 from pawpal_system import Owner, Pet, Scheduler, Task
 
-CATEGORY_ICONS = {
-    "medication": "\U0001F48A",  # pill
-    "appointment": "\U0001FA7A",  # stethoscope
-    "feeding": "\U0001F37D",  # plate
-    "walk": "\U0001F415",  # dog
-    "general": "\U0001F4CC",  # pin
-}
 
-
-def format_task(task: Task, now: datetime) -> str:
-    icon = CATEGORY_ICONS.get(task.category, CATEGORY_ICONS["general"])
-    status = "OVERDUE " if task.is_overdue(now) else "upcoming"
-    pet_name = task.pet.name if task.pet else "?"
+def format_task_row(task: Task) -> str:
+    """One fixed-width row: #id  pet  category  time  description."""
     time_str = task.scheduled_time.strftime("%a %I:%M %p")
     return (
-        f"  {icon}  [{status}] {time_str}  |  {pet_name:<8} |  "
-        f"{task.category:<11} |  {task.description}"
+        f"  #{task.task_id:<3} {task.pet.name:<8} {task.category:<11} "
+        f"{time_str:<12} {task.description}"
     )
+
+
+def print_section(title: str, tasks: list[Task]) -> None:
+    header = f"{title} ({len(tasks)})"
+    print(header)
+    print("-" * len(header))
+    if not tasks:
+        print("  (none)")
+    for task in tasks:
+        print(format_task_row(task))
+    print()
+
+
+def print_schedule(owner: Owner, scheduler: Scheduler, now: datetime) -> None:
+    ranked = scheduler.get_upcoming_tasks(now=now)
+    overdue = [t for t in ranked if t.is_overdue(now)]
+    upcoming = [t for t in ranked if not t.is_overdue(now)]
+
+    width = 60
+    print("=" * width)
+    print("  PawPal+ -- Today's Schedule".ljust(width))
+    print("=" * width)
+    print(f"Owner: {owner.name}    Pets: {', '.join(p.name for p in owner.list_pets())}")
+    print()
+
+    print_section("OVERDUE", overdue)
+    print_section("UPCOMING", upcoming)
+
+    print("-" * width)
+    print(f"Total pending: {len(ranked)}   Overdue: {len(overdue)}")
 
 
 def main() -> None:
@@ -57,19 +77,7 @@ def main() -> None:
 
     scheduler = Scheduler(owner)
 
-    print("=== PawPal+ Today's Schedule ===")
-    print(f"Owner: {owner.name}  |  Pets: {', '.join(p.name for p in owner.list_pets())}")
-    print()
-
-    ranked = scheduler.get_upcoming_tasks()
-    if not ranked:
-        print("  Nothing scheduled.")
-    for task in ranked:
-        print(format_task(task, now))
-
-    overdue = scheduler.get_overdue_tasks()
-    print()
-    print(f"Overdue tasks: {len(overdue)}  |  Total pending: {len(ranked)}")
+    print_schedule(owner, scheduler, now)
 
 
 if __name__ == "__main__":

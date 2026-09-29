@@ -32,14 +32,22 @@ python main.py
 ## Sample Output
 
 ```
-=== PawPal+ Today's Schedule ===
-Owner: Jordan  |  Pets: Rex, Milo
+============================================================
+  PawPal+ -- Today's Schedule                               
+============================================================
+Owner: Jordan    Pets: Rex, Milo
 
-  🍽  [OVERDUE ] Mon 09:38 PM  |  Rex      |  feeding     |  Breakfast: chicken & rice
-  💊  [upcoming] Tue 12:38 AM  |  Rex      |  medication  |  Heartworm pill
-  🩺  [upcoming] Wed 01:38 AM  |  Milo     |  appointment |  Vet checkup
-  🍽  [upcoming] Tue 06:38 AM  |  Milo     |  feeding     |  Wet food dinner
-  🐕  [upcoming] Tue 04:38 AM  |  Rex      |  walk        |  Evening walk around the block
+OVERDUE (1)
+-----------
+  #1   Rex      feeding     Mon 09:45 PM Breakfast: chicken & rice
 
-Overdue tasks: 1  |  Total pending: 5
+UPCOMING (4)
+------------
+  #2   Rex      medication  Tue 12:45 AM Heartworm pill
+  #4   Milo     appointment Wed 01:45 AM Vet checkup
+  #5   Milo     feeding     Tue 06:45 AM Wet food dinner
+  #3   Rex      walk        Tue 04:45 AM Evening walk around the block
+
+------------------------------------------------------------
+Total pending: 5   Overdue: 1
 ```
