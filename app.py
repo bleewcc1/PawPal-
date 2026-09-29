@@ -3,9 +3,11 @@ app.py -- Streamlit UI for PawPal+.
 
 A thin display layer over pawpal_system.py: every list of tasks shown here
 comes from a Scheduler method (get_upcoming_tasks, get_overdue_tasks,
-sort_by_time, filter_tasks), and conflict warnings come straight from
-Scheduler.find_conflicts(). No ranking/filtering logic is reimplemented
-here -- that's what main.py and the pytest suite already verified.
+sort_by_time, filter_tasks), conflict warnings come straight from
+Scheduler.find_conflicts(), and the availability check comes from
+Scheduler.find_next_available_slot(). No ranking/filtering logic is
+reimplemented here -- that's what main.py and the pytest suite already
+verified.
 """
 
 from datetime import date, datetime, time
@@ -13,9 +15,9 @@ from pathlib import Path
 
 import streamlit as st
 
-from pawpal_system import CATEGORY_WEIGHT, FREQUENCY_INTERVALS, Owner, Pet, Scheduler, Task
+from pawpal_system import CATEGORY_WEIGHT, DEFAULT_DATA_FILE, FREQUENCY_INTERVALS, Owner, Pet, Scheduler, Task
 
-DATA_FILE = Path("data/pawpal.json")
+DATA_FILE = Path(DEFAULT_DATA_FILE)
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
 
@@ -73,12 +75,12 @@ st.markdown(
 
 def load_owner() -> Owner:
     if DATA_FILE.exists():
-        return Owner.load(str(DATA_FILE))
+        return Owner.load_from_json(str(DATA_FILE))
     return Owner("My Household")
 
 
 def save_owner(owner: Owner) -> None:
-    owner.save(str(DATA_FILE))
+    owner.save_to_json(str(DATA_FILE))
 
 
 if "owner" not in st.session_state:
@@ -98,7 +100,7 @@ with st.sidebar:
         species = st.text_input("Species")
         breed = st.text_input("Breed (optional)")
         age = st.number_input("Age (years)", min_value=0.0, step=1.0, value=0.0)
-        if st.form_submit_button("Add Pet", use_container_width=True):
+        if st.form_submit_button("Add Pet", width="stretch"):
             if not name:
                 st.error("Pet name is required.")
             else:
@@ -144,6 +146,23 @@ for warning in conflicts:
     st.warning(f"⚠️ {warning}")
 
 # ---------------------------------------------------------------------------
+# Next available slot -- Scheduler.find_next_available_slot(), a capability
+# beyond the basic sort/filter/conflict/recurrence requirements.
+# ---------------------------------------------------------------------------
+
+with st.container(border=True):
+    st.subheader("📅 Next Available Slot")
+    slot_pet = st.selectbox("Check availability for", pet_names, key="slot_pet")
+    slot = scheduler.find_next_available_slot(pet_name=slot_pet)
+    if slot is not None:
+        st.info(
+            f"🟢 Next open slot for **{slot_pet}**: {slot:%a, %b %d %I:%M %p} "
+            "(scanned in 30-minute steps over the next 7 days)"
+        )
+    else:
+        st.warning(f"No open slot found for {slot_pet} in the next 7 days.")
+
+# ---------------------------------------------------------------------------
 # Add a task
 # ---------------------------------------------------------------------------
 
@@ -160,7 +179,7 @@ with st.container(border=True):
             task_time = st.time_input("Time", value=time(hour=9, minute=0))
             frequency = st.selectbox("Frequency", list(FREQUENCY_INTERVALS.keys()))
 
-        if st.form_submit_button("Add Task", use_container_width=True):
+        if st.form_submit_button("Add Task", width="stretch"):
             if not description:
                 st.error("Description is required.")
             else:
@@ -203,7 +222,7 @@ def render_tasks(tasks: list[Task], key_prefix: str) -> None:
         st.info("Nothing here.")
         return
 
-    st.dataframe([task_row(t) for t in tasks], use_container_width=True, hide_index=True)
+    st.dataframe([task_row(t) for t in tasks], width="stretch", hide_index=True)
 
     pending = [t for t in tasks if not t.completed]
     if not pending:
@@ -212,7 +231,7 @@ def render_tasks(tasks: list[Task], key_prefix: str) -> None:
     options = {f"{t.pet.name} -- {t.description} ({t.scheduled_time:%a %I:%M %p})": t.task_id for t in pending}
     col1, col2 = st.columns([4, 1])
     choice = col1.selectbox("Mark a task complete", list(options), key=f"{key_prefix}_select")
-    if col2.button("Mark Done", key=f"{key_prefix}_btn", use_container_width=True):
+    if col2.button("Mark Done", key=f"{key_prefix}_btn", width="stretch"):
         try:
             scheduler.complete_task(options[choice])
             save_owner(owner)

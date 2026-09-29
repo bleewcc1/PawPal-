@@ -166,6 +166,73 @@ def test_find_conflicts_can_be_scoped_to_one_pet(owner, now):
     assert scheduler.find_conflicts(pet_name="Rex") == []
 
 
+def test_find_next_available_slot_returns_after_when_free(owner, now):
+    scheduler = Scheduler(owner)
+    assert scheduler.find_next_available_slot(after=now) == now
+
+
+def test_find_next_available_slot_skips_occupied_times(owner, now):
+    rex = owner.get_pet("Rex")
+    rex.add_task(Task("Feed", now, category="feeding"))
+    rex.add_task(Task("Walk", now + timedelta(minutes=30), category="walk"))
+    scheduler = Scheduler(owner)
+
+    slot = scheduler.find_next_available_slot(after=now, step=timedelta(minutes=30))
+
+    assert slot == now + timedelta(hours=1)
+
+
+def test_find_next_available_slot_ignores_completed_tasks(owner, now):
+    rex = owner.get_pet("Rex")
+    done = rex.add_task(Task("Feed", now, category="feeding"))
+    done.mark_complete()
+    scheduler = Scheduler(owner)
+
+    assert scheduler.find_next_available_slot(after=now) == now
+
+
+def test_find_next_available_slot_can_be_scoped_to_one_pet(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    rex.add_task(Task("Feed Rex", now, category="feeding"))
+    scheduler = Scheduler(owner)
+
+    # Rex is busy at `now`, but Milo has nothing booked, so Milo's own
+    # search should return `now` itself rather than skipping ahead.
+    assert scheduler.find_next_available_slot(pet_name="Milo", after=now) == now
+    assert scheduler.find_next_available_slot(pet_name="Rex", after=now) != now
+
+
+def test_find_next_available_slot_returns_none_when_window_is_fully_booked(owner, now):
+    rex = owner.get_pet("Rex")
+    step = timedelta(minutes=30)
+    window = timedelta(hours=1)
+    t = now
+    while t <= now + window:
+        rex.add_task(Task("Busy", t, category="feeding"))
+        t += step
+    scheduler = Scheduler(owner)
+
+    assert scheduler.find_next_available_slot(after=now, step=step, search_window=window) is None
+
+
+def test_find_next_available_slot_rejects_non_positive_step(owner):
+    scheduler = Scheduler(owner)
+
+    with pytest.raises(ValueError, match="step must be positive"):
+        scheduler.find_next_available_slot(step=timedelta(0))
+
+    with pytest.raises(ValueError, match="step must be positive"):
+        scheduler.find_next_available_slot(step=-timedelta(minutes=30))
+
+
+def test_find_next_available_slot_rejects_negative_search_window(owner):
+    scheduler = Scheduler(owner)
+
+    with pytest.raises(ValueError, match="search_window cannot be negative"):
+        scheduler.find_next_available_slot(search_window=-timedelta(minutes=1))
+
+
 def test_get_overdue_tasks_only_returns_late_pending_tasks(owner, now):
     rex = owner.get_pet("Rex")
     late = rex.add_task(Task("Late", now - timedelta(hours=1), category="feeding"))

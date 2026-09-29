@@ -18,8 +18,8 @@ build/
 .streamlit/secrets.toml
 
 # App data / local persistence
-data/
-*.pawpal.json
+data.json
+main_demo_data.json
 
 # Environment variables
 .env

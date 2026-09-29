@@ -44,6 +44,9 @@ FREQUENCY_INTERVALS = {
     "monthly": timedelta(days=30),
 }
 
+# Default persistence location for Owner.save_to_json()/load_from_json().
+DEFAULT_DATA_FILE = "data.json"
+
 
 class Task:
     """A single activity: description, scheduled time, frequency, completion."""
@@ -243,16 +246,16 @@ class Owner:
 
     # -- persistence --------------------------------------------------------
 
-    def save(self, path: str) -> None:
-        """Write this owner and all their pets/tasks to a JSON file."""
+    def save_to_json(self, path: str = DEFAULT_DATA_FILE) -> None:
+        """Write this owner and all their pets/tasks to a JSON file, so they survive between runs."""
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {"name": self.name, "pets": [p.to_dict() for p in self.pets.values()]}
         target.write_text(json.dumps(payload, indent=2))
 
     @staticmethod
-    def load(path: str) -> "Owner":
-        """Rebuild an Owner (and all their pets/tasks) from a JSON file written by save()."""
+    def load_from_json(path: str = DEFAULT_DATA_FILE) -> "Owner":
+        """Rebuild an Owner (and all their pets/tasks) from a JSON file written by save_to_json()."""
         payload = json.loads(Path(path).read_text())
         owner = Owner(payload["name"])
         for pet_data in payload["pets"]:
@@ -311,6 +314,34 @@ class Scheduler:
             clash = ", ".join(f"{t.pet.name}'s {t.description!r}" for t in group)
             warnings.append(f"Scheduling conflict at {time:%Y-%m-%d %I:%M %p}: {clash}")
         return warnings
+
+    def find_next_available_slot(
+        self,
+        pet_name: Optional[str] = None,
+        after: Optional[datetime] = None,
+        step: timedelta = timedelta(minutes=30),
+        search_window: timedelta = timedelta(days=7),
+    ) -> Optional[datetime]:
+        """Earliest time at/after `after` with no existing pending task already
+        booked there, scanning forward in fixed steps; None if the whole
+        search_window is booked solid. Complements find_conflicts()'s
+        backward-looking check with a forward-looking "when can I book this"
+        answer, using the same exact-time notion of a clash."""
+        if step <= timedelta(0):
+            raise ValueError("step must be positive")
+        if search_window < timedelta(0):
+            raise ValueError("search_window cannot be negative")
+
+        after = after or datetime.now()
+        occupied = {t.scheduled_time for t in self._pending(pet_name)}
+
+        candidate = after
+        deadline = after + search_window
+        while candidate <= deadline:
+            if candidate not in occupied:
+                return candidate
+            candidate += step
+        return None
 
     def get_task_by_id(self, task_id: int) -> Optional[Task]:
         """Find one task by id across every pet, or None if it doesn't exist."""

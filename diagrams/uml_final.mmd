@@ -50,6 +50,7 @@ classDiagram
         +get_upcoming_tasks(limit, pet_name, now) List~Task~
         +get_overdue_tasks(pet_name, now) List~Task~
         +find_conflicts(pet_name) List~str~
+        +find_next_available_slot(pet_name, after, step, search_window) datetime
         +get_task_by_id(task_id) Task
         +complete_task(task_id) Task
         +get_schedule_by_pet(now) dict

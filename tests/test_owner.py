@@ -44,10 +44,21 @@ def test_save_and_load_round_trip(owner, now, tmp_path):
     owner.get_pet("Rex").add_task(Task("Feed Rex", now, frequency="daily", category="feeding"))
     path = tmp_path / "pawpal.json"
 
-    owner.save(str(path))
-    restored = Owner.load(str(path))
+    owner.save_to_json(str(path))
+    restored = Owner.load_from_json(str(path))
 
     assert restored.name == owner.name
     assert {p.name for p in restored.list_pets()} == {"Rex", "Milo"}
     assert len(restored.get_all_tasks()) == 1
     assert restored.get_all_tasks()[0].description == "Feed Rex"
+
+
+def test_save_and_load_default_to_data_json_in_cwd(owner, now, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    owner.get_pet("Milo").add_task(Task("Vet visit", now, category="appointment"))
+
+    owner.save_to_json()  # no path given -- should use DEFAULT_DATA_FILE ("data.json")
+    assert (tmp_path / "data.json").exists()
+
+    restored = Owner.load_from_json()  # same default, read back from the cwd
+    assert {p.name for p in restored.list_pets()} == {"Rex", "Milo"}

@@ -119,6 +119,33 @@ def main() -> None:
         print("  (none)")
     for warning in conflicts:
         print(f"  WARNING: {warning}")
+    print()
+
+    # find_next_available_slot(): beyond the basic requirements -- a
+    # forward scan (in 30-minute steps) for the next time Rex has nothing
+    # else booked, using the same exact-time notion of a clash as
+    # find_conflicts() above.
+    print("NEXT AVAILABLE SLOT FOR REX -- find_next_available_slot(pet_name='Rex')")
+    print("-" * 71)
+    slot = scheduler.find_next_available_slot(pet_name="Rex", after=now)
+    print(f"  {slot:%a %b %d, %I:%M %p}")
+    print()
+
+    # save_to_json() / load_from_json(): the same persistence mechanism
+    # app.py uses (there, against the default "data.json"). A separate demo
+    # file is used here so running this script never overwrites the real
+    # app's saved household.
+    demo_path = "main_demo_data.json"
+    print(f"PERSISTENCE CHECK -- save_to_json('{demo_path}') / load_from_json('{demo_path}')")
+    print("-" * 78)
+    owner.save_to_json(demo_path)
+    reloaded = Owner.load_from_json(demo_path)
+    print(f"  Saved {len(owner.get_all_tasks())} tasks for {len(owner.list_pets())} pets to {demo_path}")
+    print(
+        f"  Reloaded from disk: {len(reloaded.list_pets())} pets, "
+        f"{len(reloaded.get_all_tasks())} tasks -- matches: "
+        f"{[p.name for p in reloaded.list_pets()] == [p.name for p in owner.list_pets()]}"
+    )
 
 
 if __name__ == "__main__":

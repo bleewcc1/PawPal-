@@ -37,16 +37,22 @@ algorithm to surface what needs attention first.
   Completing an already-completed task is guarded against, so it can
   never silently double-book a duplicate occurrence. (`pawpal_system.py`)
 
+- **Next available slot finder** -- `Scheduler.find_next_available_slot()`
+  scans forward from now (or any given time) in fixed steps and returns
+  the first timestamp with nothing already booked for that pet, using the
+  same exact-time clash rule as conflict detection. (`pawpal_system.py`)
+
 - **Multi-pet household support** -- `Owner.get_all_tasks()` aggregates
   every pet's tasks into one collection, and `Scheduler` always queries
   through this method rather than any single `Pet`, so ranking, sorting,
   filtering, and conflict detection are all correct across any number of
   pets. (`pawpal_system.py`)
 
-- **Persistent storage** -- `Owner.save()` / `Owner.load()` round-trip an
-  entire household (pets and their tasks) to and from JSON, so data
-  survives between runs of the app. (`pawpal_system.py`; used by `app.py`
-  to persist to `data/pawpal.json`)
+- **Persistent storage** -- `Owner.save_to_json()` / `Owner.load_from_json()`
+  round-trip an entire household (pets and their tasks) to and from a JSON
+  file (`data.json` by default), so data survives between runs of the app.
+  See [Persistence](#persistence) below for the full workflow.
+  (`pawpal_system.py`; used by `app.py`)
 
 - **Streamlit dashboard** -- a browser UI with a live metrics summary
   (pets / pending tasks / overdue / conflicts), forms to add pets and
@@ -110,7 +116,8 @@ only) and `Task ..> Pet` (the back-reference set by `Pet.add_task()`).
 ## Smarter Scheduling
 
 Beyond basic priority ranking, `Scheduler` implements four specific
-behaviors:
+behaviors, plus one capability that goes beyond the basic requirements
+(next available slot finding):
 
 - **Sorting by time** -- `Scheduler.sort_by_time(pet_name=None)` returns
   pending tasks ordered purely by `scheduled_time`, earliest first,
@@ -142,6 +149,16 @@ behaviors:
   recurring task is marked done, appending the new occurrence to the same
   pet so it shows up in the very next query.
 
+- **Next available slot finding** *(beyond the basic requirements)* --
+  `Scheduler.find_next_available_slot(pet_name=None, after=None,
+  step=timedelta(minutes=30), search_window=timedelta(days=7))` answers
+  the forward-looking question `find_conflicts()` doesn't: "when can I
+  next book something without colliding?" It scans forward from `after`
+  (default now) in fixed-size steps, using the same exact-time notion of
+  a clash as `find_conflicts()`, and returns the first timestamp with
+  nothing already scheduled there for that pet (or across all pets),
+  or `None` if the entire search window is booked solid.
+
 ## Running the App
 
 ```
@@ -153,9 +170,64 @@ Opens PawPal+ in your browser at `http://localhost:8501`. Add a pet in the
 sidebar, then add tasks from the "Add a Task" form -- the dashboard
 metrics, conflict warnings, and all three views (Priority Schedule, Sorted
 by Time, Filter) update live from the same `Scheduler` you can see exercised
-in `main.py` and `tests/`. Data is saved automatically to
-`data/pawpal.json` (gitignored) and reloaded the next time you start the
-app.
+in `main.py` and `tests/`. Data is saved automatically to `data.json`
+(gitignored) and reloaded the next time you start the app -- see
+[Persistence](#persistence) below.
+
+## Persistence
+
+PawPal+ remembers pets and tasks between runs by saving them to a plain
+JSON file, `data.json`, in the project root (gitignored, since it's
+per-user runtime data rather than source).
+
+**The mechanism** -- two methods on `Owner` in `pawpal_system.py`:
+
+- `owner.save_to_json(path=DEFAULT_DATA_FILE)` -- serializes the owner's
+  name plus every pet (via `Pet.to_dict()`, which in turn serializes each
+  of that pet's tasks via `Task.to_dict()`) into one JSON document and
+  writes it to `path`. The default, `DEFAULT_DATA_FILE`, is `"data.json"`,
+  so a bare `owner.save_to_json()` "just works" without the caller naming
+  a path.
+- `Owner.load_from_json(path=DEFAULT_DATA_FILE)` -- the inverse: reads that
+  JSON document and rebuilds a brand-new `Owner`, with real `Pet` and
+  `Task` objects (not dicts), by walking `from_dict()` on the way back up
+  (`Task.from_dict()` -> `Pet.from_dict()` -> `Owner.load_from_json()`).
+  It's a `@staticmethod` since there's no existing `Owner` to call it on
+  yet -- it's how you get one in the first place.
+
+**The workflow in `app.py`** -- on first load, `load_owner()` calls
+`Owner.load_from_json()` if `data.json` already exists, or creates a fresh
+empty `Owner` if this is the first run ever. The loaded (or new) `Owner`
+is cached in `st.session_state` for the rest of that browser session.
+Every mutation -- adding a pet, adding a task, marking a task complete --
+immediately calls `save_owner()`, which calls `owner.save_to_json()`, so
+the file on disk is never more than one action out of date. Close the app,
+reopen it days later, and every pet and task is exactly where it was left.
+
+**Verifying it without the UI** -- `main.py` demonstrates the same two
+methods directly against a separate demo file
+(`main_demo_data.json`, so running the CLI script never overwrites the
+real app's saved household): it saves the sample household, immediately
+reloads it into a new `Owner`, and prints a match check. `tests/test_owner.py`
+covers both the explicit-path case and the zero-argument default-path
+case (`test_save_and_load_round_trip`,
+`test_save_and_load_default_to_data_json_in_cwd`).
+
+**Files modified for this feature:**
+
+- `pawpal_system.py` -- renamed `Owner.save()`/`Owner.load()` to
+  `save_to_json()`/`load_from_json()`, added the `DEFAULT_DATA_FILE`
+  constant, gave both methods a default path.
+- `app.py` -- updated to the new method names and the new default
+  `data.json` location (previously `data/pawpal.json`).
+- `main.py` -- added a persistence demo section using a separate demo
+  file.
+- `tests/test_owner.py` -- updated to the new method names; added a test
+  for the default-path (zero-argument) behavior.
+- `.gitignore` -- now ignores `data.json` and `main_demo_data.json`
+  instead of the old `data/` folder.
+- `README.md` -- this section, plus updated references elsewhere in the
+  doc from the old method names/path.
 
 ## Running the CLI demo
 
@@ -171,7 +243,7 @@ python -m pytest
 ```
 
 `tests/` has one file per core class (`test_task.py`, `test_pet.py`,
-`test_owner.py`, `test_scheduler.py`), 40 tests total, all passing. Coverage
+`test_owner.py`, `test_scheduler.py`), 46 tests total, all passing. Coverage
 includes:
 
 - **Sorting correctness** -- tasks come back in true chronological order
@@ -192,10 +264,11 @@ includes:
   correctly combines every pet's tasks, and `Scheduler` ranks overdue
   status above category urgency above soonest due time.
 - **Persistence** -- an `Owner` (with pets and tasks) round-trips through
-  `save()`/`load()` without losing data.
+  `save_to_json()`/`load_from_json()` without losing data, both with an
+  explicit path and with the zero-argument default (`data.json`).
 
 Run `python main.py` alongside the tests for a terminal-visible sanity
-check of the same behavior -- see Sample Output below.
+check of the same behavior -- see the Demo Walkthrough below.
 
 ### Test run output
 
@@ -206,14 +279,14 @@ rootdir: /Volumes/T7Shield/CodePath/AppliedAI/AI110/week4/Project/PawPal+
 configfile: pytest.ini
 testpaths: tests
 plugins: anyio-4.8.0
-collected 40 items
+collected 46 items
 
-tests/test_owner.py .....                                                [ 12%]
-tests/test_pet.py .....                                                  [ 25%]
-tests/test_scheduler.py .....................                            [ 77%]
+tests/test_owner.py ......                                               [ 13%]
+tests/test_pet.py .....                                                  [ 23%]
+tests/test_scheduler.py ..........................                       [ 80%]
 tests/test_task.py .........                                             [100%]
 
-============================== 40 passed in 0.03s ==============================
+============================== 46 passed in 0.03s ==============================
 ```
 
 ### Confidence Level
@@ -250,6 +323,9 @@ Launching the app (`streamlit run app.py`) opens a dashboard where you can:
   status).
 - **Mark a task complete** from a dropdown + button under any task table --
   recurring tasks automatically reschedule their next occurrence.
+- **Check the next open slot** for any pet from the "Next Available Slot"
+  card, and pick up right where you left off next time -- every change is
+  saved to `data.json` automatically (see [Persistence](#persistence)).
 
 ### Example workflow
 
@@ -286,6 +362,9 @@ Launching the app (`streamlit run app.py`) opens a dashboard where you can:
   time rather than to whenever it was actually completed.
 - **Filtering** -- narrowing by pet, by completion status, or both, all
   through the one `filter_tasks()` method every other view is built on.
+- **Persistence** -- every add/complete action calls `save_to_json()`
+  immediately, so closing and reopening the app reloads the exact same
+  household via `load_from_json()`.
 
 ### Sample CLI output (`python main.py`)
 
@@ -300,14 +379,14 @@ Owner: Jordan    Pets: Rex, Milo
 
 OVERDUE (1)
 -----------
-  #2   Rex      feeding     Mon 10:35 PM Breakfast: chicken & rice
+  #2   Rex      feeding     Tue 06:04 AM Breakfast: chicken & rice
 
 UPCOMING (4)
 ------------
-  #4   Rex      medication  Tue 01:35 AM Heartworm pill
-  #5   Milo     appointment Tue 01:35 AM Vet checkup
-  #3   Milo     feeding     Tue 07:35 AM Wet food dinner
-  #1   Rex      walk        Tue 05:35 AM Evening walk around the block
+  #4   Rex      medication  Tue 09:04 AM Heartworm pill
+  #5   Milo     appointment Tue 09:04 AM Vet checkup
+  #3   Milo     feeding     Tue 03:04 PM Wet food dinner
+  #1   Rex      walk        Tue 01:04 PM Evening walk around the block
 
 ------------------------------------------------------------
 Total pending: 5   Overdue: 1
@@ -317,28 +396,37 @@ Total pending: 5   Overdue: 1
 
 ALL PENDING TASKS -- sort_by_time() (5)
 ---------------------------------------
-  #2   Rex      feeding     Mon 10:35 PM Breakfast: chicken & rice
-  #4   Rex      medication  Tue 01:35 AM Heartworm pill
-  #5   Milo     appointment Tue 01:35 AM Vet checkup
-  #1   Rex      walk        Tue 05:35 AM Evening walk around the block
-  #3   Milo     feeding     Tue 07:35 AM Wet food dinner
+  #2   Rex      feeding     Tue 06:04 AM Breakfast: chicken & rice
+  #4   Rex      medication  Tue 09:04 AM Heartworm pill
+  #5   Milo     appointment Tue 09:04 AM Vet checkup
+  #1   Rex      walk        Tue 01:04 PM Evening walk around the block
+  #3   Milo     feeding     Tue 03:04 PM Wet food dinner
 
 Completing task #2 (Breakfast: chicken & rice)...
-  -> recurring task auto-rescheduled: new task #6 at Tue 10:35 PM
+  -> recurring task auto-rescheduled: new task #6 at Wed 06:04 AM
 
 COMPLETED TASKS -- filter_tasks(completed=True) (1)
 ---------------------------------------------------
-  #2   Rex      feeding     Mon 10:35 PM Breakfast: chicken & rice
+  #2   Rex      feeding     Tue 06:04 AM Breakfast: chicken & rice
 
 REX'S PENDING TASKS -- filter_tasks(pet_name='Rex', completed=False) (3)
 ------------------------------------------------------------------------
-  #1   Rex      walk        Tue 05:35 AM Evening walk around the block
-  #4   Rex      medication  Tue 01:35 AM Heartworm pill
-  #6   Rex      feeding     Tue 10:35 PM Breakfast: chicken & rice
+  #1   Rex      walk        Tue 01:04 PM Evening walk around the block
+  #4   Rex      medication  Tue 09:04 AM Heartworm pill
+  #6   Rex      feeding     Wed 06:04 AM Breakfast: chicken & rice
 
 CONFLICT CHECK -- find_conflicts()
 -----------------------------------
-  WARNING: Scheduling conflict at 2026-09-29 01:35 AM: Rex's 'Heartworm pill', Milo's 'Vet checkup'
+  WARNING: Scheduling conflict at 2026-09-29 09:04 AM: Rex's 'Heartworm pill', Milo's 'Vet checkup'
+
+NEXT AVAILABLE SLOT FOR REX -- find_next_available_slot(pet_name='Rex')
+-----------------------------------------------------------------------
+  Tue Sep 29, 07:04 AM
+
+PERSISTENCE CHECK -- save_to_json('main_demo_data.json') / load_from_json('main_demo_data.json')
+------------------------------------------------------------------------------
+  Saved 6 tasks for 2 pets to main_demo_data.json
+  Reloaded from disk: 2 pets, 6 tasks -- matches: True
 ```
 
 Screenshots of the Streamlit UI can be added here for human reviewers, but
