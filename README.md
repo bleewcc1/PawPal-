@@ -47,6 +47,41 @@ Core logic lives in `pawpal_system.py`, with four classes:
 `main.py` is the CLI testing ground used to verify this logic works before
 any UI is built on top of it.
 
+## Smarter Scheduling
+
+Beyond basic priority ranking, `Scheduler` implements four specific
+behaviors:
+
+- **Sorting by time** -- `Scheduler.sort_by_time(pet_name=None)` returns
+  pending tasks ordered purely by `scheduled_time`, earliest first,
+  ignoring category weight entirely. Useful when you just want "what's
+  next chronologically" rather than a priority-weighted view.
+
+- **Filtering by pet or completion status** --
+  `Scheduler.filter_tasks(pet_name=None, completed=None)` narrows the full
+  task list by either or both criteria (e.g. `completed=True` for a
+  history view, `pet_name="Rex", completed=False` for one pet's open
+  tasks). Both filters are optional and combine, and every other query
+  method (`get_upcoming_tasks`, `sort_by_time`, `get_overdue_tasks`) is
+  itself built on top of this one filter.
+
+- **Conflict detection** -- `Scheduler.find_conflicts(pet_name=None)`
+  groups pending tasks by exact `scheduled_time` and returns a
+  human-readable warning string for every time slot with two or more
+  tasks in it (whether for the same pet or different pets). It never
+  raises -- an empty list just means no conflicts -- since a scheduling
+  clash is a heads-up for the owner, not a program error. See
+  `reflection.md` section 2b for the tradeoff this design makes
+  (exact-time matches only, not overlapping durations).
+
+- **Recurring task logic** -- `Task.next_occurrence()` builds the next
+  instance of a `daily`/`weekly`/`monthly` task by adding a fixed
+  `timedelta` to its *original* `scheduled_time` (not the completion
+  time, so a late completion doesn't drift the schedule).
+  `Scheduler.complete_task(task_id)` calls this automatically whenever a
+  recurring task is marked done, appending the new occurrence to the same
+  pet so it shows up in the very next query.
+
 ## Running the CLI demo
 
 ```
@@ -74,15 +109,43 @@ Owner: Jordan    Pets: Rex, Milo
 
 OVERDUE (1)
 -----------
-  #1   Rex      feeding     Mon 09:45 PM Breakfast: chicken & rice
+  #2   Rex      feeding     Mon 10:11 PM Breakfast: chicken & rice
 
 UPCOMING (4)
 ------------
-  #2   Rex      medication  Tue 12:45 AM Heartworm pill
-  #4   Milo     appointment Wed 01:45 AM Vet checkup
-  #5   Milo     feeding     Tue 06:45 AM Wet food dinner
-  #3   Rex      walk        Tue 04:45 AM Evening walk around the block
+  #4   Rex      medication  Tue 01:11 AM Heartworm pill
+  #5   Milo     appointment Tue 01:11 AM Vet checkup
+  #3   Milo     feeding     Tue 07:11 AM Wet food dinner
+  #1   Rex      walk        Tue 05:11 AM Evening walk around the block
 
 ------------------------------------------------------------
 Total pending: 5   Overdue: 1
+============================================================
+  Sorting & Filtering Checks                                
+============================================================
+
+ALL PENDING TASKS -- sort_by_time() (5)
+---------------------------------------
+  #2   Rex      feeding     Mon 10:11 PM Breakfast: chicken & rice
+  #4   Rex      medication  Tue 01:11 AM Heartworm pill
+  #5   Milo     appointment Tue 01:11 AM Vet checkup
+  #1   Rex      walk        Tue 05:11 AM Evening walk around the block
+  #3   Milo     feeding     Tue 07:11 AM Wet food dinner
+
+Completing task #2 (Breakfast: chicken & rice)...
+  -> recurring task auto-rescheduled: new task #6 at Tue 10:11 PM
+
+COMPLETED TASKS -- filter_tasks(completed=True) (1)
+---------------------------------------------------
+  #2   Rex      feeding     Mon 10:11 PM Breakfast: chicken & rice
+
+REX'S PENDING TASKS -- filter_tasks(pet_name='Rex', completed=False) (3)
+------------------------------------------------------------------------
+  #1   Rex      walk        Tue 05:11 AM Evening walk around the block
+  #4   Rex      medication  Tue 01:11 AM Heartworm pill
+  #6   Rex      feeding     Tue 10:11 PM Breakfast: chicken & rice
+
+CONFLICT CHECK -- find_conflicts()
+-----------------------------------
+  WARNING: Scheduling conflict at 2026-09-29 01:11 AM: Rex's 'Heartworm pill', Milo's 'Vet checkup'
 ```

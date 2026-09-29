@@ -49,6 +49,123 @@ def test_get_upcoming_tasks_can_filter_by_pet(owner, now):
     assert ranked[0].pet.name == "Milo"
 
 
+def test_filter_tasks_with_no_args_returns_everything(owner, now):
+    rex_task = owner.get_pet("Rex").add_task(Task("Feed Rex", now, category="feeding"))
+    milo_task = owner.get_pet("Milo").add_task(Task("Feed Milo", now, category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.filter_tasks() == [rex_task, milo_task]
+
+
+def test_filter_tasks_by_pet_name(owner, now):
+    rex_task = owner.get_pet("Rex").add_task(Task("Feed Rex", now, category="feeding"))
+    owner.get_pet("Milo").add_task(Task("Feed Milo", now, category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.filter_tasks(pet_name="Rex") == [rex_task]
+
+
+def test_filter_tasks_by_completion_status(owner, now):
+    rex = owner.get_pet("Rex")
+    done = rex.add_task(Task("Done", now, category="feeding"))
+    done.mark_complete()
+    pending = rex.add_task(Task("Pending", now, category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.filter_tasks(completed=True) == [done]
+    assert scheduler.filter_tasks(completed=False) == [pending]
+
+
+def test_filter_tasks_combines_pet_name_and_completion_status(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    rex_done = rex.add_task(Task("Rex done", now, category="feeding"))
+    rex_done.mark_complete()
+    rex.add_task(Task("Rex pending", now, category="feeding"))
+    milo_done = milo.add_task(Task("Milo done", now, category="feeding"))
+    milo_done.mark_complete()
+    scheduler = Scheduler(owner)
+
+    assert scheduler.filter_tasks(pet_name="Milo", completed=True) == [milo_done]
+
+
+def test_sort_by_time_ignores_category_and_overdue_status(owner, now):
+    rex = owner.get_pet("Rex")
+    earliest = rex.add_task(Task("Walk", now + timedelta(hours=1), category="walk"))
+    middle = rex.add_task(Task("Late pill", now - timedelta(hours=1), category="medication"))
+    latest = rex.add_task(Task("Feed", now + timedelta(hours=5), category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.sort_by_time() == [middle, earliest, latest]
+
+
+def test_sort_by_time_excludes_completed_and_can_filter_by_pet(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    done = rex.add_task(Task("Done", now, category="feeding"))
+    done.mark_complete()
+    rex_task = rex.add_task(Task("Rex task", now + timedelta(hours=1), category="feeding"))
+    milo.add_task(Task("Milo task", now + timedelta(hours=2), category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.sort_by_time(pet_name="Rex") == [rex_task]
+
+
+def test_find_conflicts_returns_empty_list_when_no_clashes(owner, now):
+    owner.get_pet("Rex").add_task(Task("Feed", now, category="feeding"))
+    owner.get_pet("Milo").add_task(Task("Feed", now + timedelta(hours=1), category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.find_conflicts() == []
+
+
+def test_find_conflicts_detects_same_time_across_different_pets(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    rex.add_task(Task("Breakfast", now, category="feeding"))
+    milo.add_task(Task("Vet checkup", now, category="appointment"))
+    scheduler = Scheduler(owner)
+
+    warnings = scheduler.find_conflicts()
+
+    assert len(warnings) == 1
+    assert "Rex" in warnings[0]
+    assert "Milo" in warnings[0]
+
+
+def test_find_conflicts_detects_same_pet_double_booking(owner, now):
+    rex = owner.get_pet("Rex")
+    rex.add_task(Task("Walk", now, category="walk"))
+    rex.add_task(Task("Pill", now, category="medication"))
+    scheduler = Scheduler(owner)
+
+    warnings = scheduler.find_conflicts()
+
+    assert len(warnings) == 1
+    assert "Walk" in warnings[0] and "Pill" in warnings[0]
+
+
+def test_find_conflicts_ignores_completed_tasks(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    done = rex.add_task(Task("Old", now, category="feeding"))
+    done.mark_complete()
+    milo.add_task(Task("New", now, category="feeding"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.find_conflicts() == []
+
+
+def test_find_conflicts_can_be_scoped_to_one_pet(owner, now):
+    rex = owner.get_pet("Rex")
+    milo = owner.get_pet("Milo")
+    rex.add_task(Task("Breakfast", now, category="feeding"))
+    milo.add_task(Task("Vet checkup", now, category="appointment"))
+    scheduler = Scheduler(owner)
+
+    assert scheduler.find_conflicts(pet_name="Rex") == []
+
+
 def test_get_overdue_tasks_only_returns_late_pending_tasks(owner, now):
     rex = owner.get_pet("Rex")
     late = rex.add_task(Task("Late", now - timedelta(hours=1), category="feeding"))

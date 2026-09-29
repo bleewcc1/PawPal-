@@ -51,6 +51,28 @@ initially only tested that a task got added to a pet's list, not that the
 list's length actually increased, so I asked for an explicit count-based
 test before considering task-addition covered.
 
+## 2b. Tradeoffs
+
+`Scheduler.find_conflicts()` only flags two tasks as conflicting when their
+`scheduled_time` values are exactly equal, not when they'd merely overlap
+(e.g. a 30-minute walk at 5:00 PM and a vet appointment at 5:15 PM). This
+was a deliberate simplification rather than an oversight: `Task` only has a
+single `scheduled_time`, not a duration or end time, so there's nothing to
+compute an overlap *against* -- the assignment's four-attribute `Task`
+(description, time, frequency, completion) doesn't carry one. Exact-match
+grouping is also cheap: one pass to bucket tasks by timestamp plus a sort
+of the distinct times, versus the sort-and-sweep an interval-overlap check
+would need (sort all tasks by start time, then compare each task's start
+against the running end of the previous one).
+
+The cost is false negatives: two back-to-back tasks that would genuinely
+clash in a real calendar go undetected if they don't start at the identical
+minute. I accepted that gap for now rather than adding a `duration` field
+to `Task`, since it would widen the data model beyond what this milestone
+asked for. If PawPal+ later needs real overlap detection, that's the
+concrete next step: give `Task` a duration/end time and swap the grouping
+logic in `find_conflicts()` for an interval-sweep.
+
 ## How I verified the result
 
 For every change, I had it re-run `python main.py` and read the printed

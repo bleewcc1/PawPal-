@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import itertools
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta
 from heapq import nsmallest
 from pathlib import Path
@@ -266,12 +267,18 @@ class Scheduler:
         """Bind this scheduler to the owner whose tasks it will manage."""
         self.owner = owner
 
-    def _pending(self, pet_name: Optional[str] = None) -> list[Task]:
-        """Every not-yet-completed task, optionally filtered to one pet."""
+    def filter_tasks(self, pet_name: Optional[str] = None, completed: Optional[bool] = None) -> list[Task]:
+        """Tasks across all pets, optionally narrowed by pet name and/or completion status."""
         tasks = self.owner.get_all_tasks()
         if pet_name is not None:
             tasks = [t for t in tasks if t.pet.name == pet_name]
-        return [t for t in tasks if not t.completed]
+        if completed is not None:
+            tasks = [t for t in tasks if t.completed == completed]
+        return tasks
+
+    def _pending(self, pet_name: Optional[str] = None) -> list[Task]:
+        """Every not-yet-completed task, optionally filtered to one pet."""
+        return self.filter_tasks(pet_name=pet_name, completed=False)
 
     def get_upcoming_tasks(self, limit: Optional[int] = None, pet_name: Optional[str] = None, now=None) -> list[Task]:
         """Pending tasks ranked highest-priority first (heap-based top-k selection)."""
@@ -280,12 +287,30 @@ class Scheduler:
         n = limit if limit is not None else len(pending)
         return nsmallest(n, pending, key=lambda t: t.priority_key(now))
 
+    def sort_by_time(self, pet_name: Optional[str] = None) -> list[Task]:
+        """Pending tasks sorted purely by scheduled_time, earliest first, ignoring category."""
+        return sorted(self._pending(pet_name), key=lambda t: t.scheduled_time)
+
     def get_overdue_tasks(self, pet_name: Optional[str] = None, now=None) -> list[Task]:
         """Pending tasks whose time has passed, soonest-overdue first."""
         now = now or datetime.now()
         pending = self._pending(pet_name)
         late = [t for t in pending if t.is_overdue(now)]
         return sorted(late, key=lambda t: t.scheduled_time)
+
+    def find_conflicts(self, pet_name: Optional[str] = None) -> list[str]:
+        """Human-readable warnings for pending tasks sharing an exact scheduled time; never raises, empty list means no conflicts."""
+        by_time: defaultdict[datetime, list[Task]] = defaultdict(list)
+        for task in self._pending(pet_name):
+            by_time[task.scheduled_time].append(task)
+
+        warnings = []
+        for time, group in sorted(by_time.items()):
+            if len(group) < 2:
+                continue
+            clash = ", ".join(f"{t.pet.name}'s {t.description!r}" for t in group)
+            warnings.append(f"Scheduling conflict at {time:%Y-%m-%d %I:%M %p}: {clash}")
+        return warnings
 
     def get_task_by_id(self, task_id: int) -> Optional[Task]:
         """Find one task by id across every pet, or None if it doesn't exist."""
