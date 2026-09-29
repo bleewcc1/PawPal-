@@ -1,0 +1,61 @@
+classDiagram
+    class Task {
+        -int task_id
+        -str description
+        -datetime scheduled_time
+        -str frequency
+        -bool completed
+        -str category
+        -Pet pet
+        +mark_complete() void
+        +is_overdue(now) bool
+        +recurrence_interval() timedelta
+        +next_occurrence() Task
+        +priority_key(now) tuple
+        +to_dict() dict
+        +from_dict(data) Task$
+    }
+
+    class Pet {
+        -str name
+        -str species
+        -str breed
+        -float age
+        -float weight
+        -str notes
+        -List~Task~ tasks
+        +add_task(task) Task
+        +remove_task(task_id) void
+        +get_tasks(include_completed) List~Task~
+        +to_dict() dict
+        +from_dict(data) Pet$
+    }
+
+    class Owner {
+        -str name
+        -Dict~str,Pet~ pets
+        +add_pet(pet) void
+        +remove_pet(name) void
+        +get_pet(name) Pet
+        +list_pets() List~Pet~
+        +get_all_tasks() List~Task~
+        +save(path) void
+        +load(path) Owner$
+    }
+
+    class Scheduler {
+        -Owner owner
+        +filter_tasks(pet_name, completed) List~Task~
+        +sort_by_time(pet_name) List~Task~
+        +get_upcoming_tasks(limit, pet_name, now) List~Task~
+        +get_overdue_tasks(pet_name, now) List~Task~
+        +find_conflicts(pet_name) List~str~
+        +get_task_by_id(task_id) Task
+        +complete_task(task_id) Task
+        +get_schedule_by_pet(now) dict
+    }
+
+    Owner "1" *-- "many" Pet : manages
+    Pet "1" *-- "many" Task : owns
+    Scheduler "1" ..> "1" Owner : reads via get_all_tasks()
+    Task ..> Pet : pet back-reference
