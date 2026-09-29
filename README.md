@@ -88,16 +88,73 @@ behaviors:
 python main.py
 ```
 
-## Running the tests
+## Testing PawPal+
 
 ```
 pip install -r requirements.txt
-pytest -q
+python -m pytest
 ```
 
-`tests/` has one file per core class, exercising completion/overdue logic,
-recurrence, Owner's multi-pet task aggregation, and the Scheduler's
-priority ranking.
+`tests/` has one file per core class (`test_task.py`, `test_pet.py`,
+`test_owner.py`, `test_scheduler.py`), 40 tests total, all passing. Coverage
+includes:
+
+- **Sorting correctness** -- tasks come back in true chronological order
+  from `sort_by_time()`, regardless of category or insertion order
+  (`test_sort_by_time_ignores_category_and_overdue_status`).
+- **Recurrence logic** -- completing a `daily` task creates a new one
+  scheduled for exactly the following day
+  (`test_complete_task_marks_done_and_reschedules_recurring_task`), and
+  completing an *already-completed* task raises instead of silently
+  spawning a duplicate occurrence
+  (`test_complete_task_raises_if_already_completed_and_does_not_double_recur`).
+- **Conflict detection** -- `find_conflicts()` flags two tasks at the exact
+  same time, whether for the same pet or different pets
+  (`test_find_conflicts_detects_same_pet_double_booking`,
+  `test_find_conflicts_detects_same_time_across_different_pets`), and
+  correctly reports no conflicts once completed tasks are excluded.
+- **Multi-pet aggregation and priority ranking** -- `Owner.get_all_tasks()`
+  correctly combines every pet's tasks, and `Scheduler` ranks overdue
+  status above category urgency above soonest due time.
+- **Persistence** -- an `Owner` (with pets and tasks) round-trips through
+  `save()`/`load()` without losing data.
+
+Run `python main.py` alongside the tests for a terminal-visible sanity
+check of the same behavior -- see Sample Output below.
+
+### Test run output
+
+```
+============================= test session starts ==============================
+platform darwin -- Python 3.11.6, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Volumes/T7Shield/CodePath/AppliedAI/AI110/week4/Project/PawPal+
+configfile: pytest.ini
+testpaths: tests
+plugins: anyio-4.8.0
+collected 40 items
+
+tests/test_owner.py .....                                                [ 12%]
+tests/test_pet.py .....                                                  [ 25%]
+tests/test_scheduler.py .....................                            [ 77%]
+tests/test_task.py .........                                             [100%]
+
+============================== 40 passed in 0.03s ==============================
+```
+
+### Confidence Level
+
+Confidence Level: ★★★★☆ (4/5)
+
+The core logic -- sorting, filtering, recurrence, conflict detection,
+multi-pet aggregation, and persistence -- is well covered and every test
+passes deterministically (fixed `now` fixture, no reliance on real clock
+time or randomness). I'm not giving 5/5 because coverage is at the unit
+level only: there's no test yet exercising the system the way a real user
+would end-to-end (add a pet, add several tasks, complete some, reload from
+disk, all in one flow), and known simplifications like exact-time-only
+conflict detection and the fixed 30-day "monthly" interval (see
+`reflection.md` section 2b) mean the system is reliable for what it
+promises, not for every real-world scheduling nuance.
 
 ## Sample Output
 

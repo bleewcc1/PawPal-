@@ -320,10 +320,12 @@ class Scheduler:
         return None
 
     def complete_task(self, task_id: int) -> Optional[Task]:
-        """Marks a task done and, if recurring, schedules its next occurrence."""
+        """Marks a task done and, if recurring, schedules its next occurrence; raises if already completed."""
         task = self.get_task_by_id(task_id)
         if task is None:
             raise KeyError(f"No task with id {task_id}")
+        if task.completed:
+            raise ValueError(f"Task {task_id} is already completed")
         task.mark_complete()
         nxt = task.next_occurrence()
         if nxt is not None:

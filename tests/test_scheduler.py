@@ -206,6 +206,19 @@ def test_complete_task_raises_for_unknown_id(owner):
         scheduler.complete_task(9999)
 
 
+def test_complete_task_raises_if_already_completed_and_does_not_double_recur(owner, now):
+    rex = owner.get_pet("Rex")
+    task = rex.add_task(Task("Feed", now, frequency="daily", category="feeding"))
+    scheduler = Scheduler(owner)
+
+    scheduler.complete_task(task.task_id)
+    with pytest.raises(ValueError):
+        scheduler.complete_task(task.task_id)
+
+    # Only one recurring occurrence should exist, not two.
+    assert len(rex.tasks) == 2
+
+
 def test_get_schedule_by_pet_groups_tasks_under_each_pet_name(owner, now):
     owner.get_pet("Rex").add_task(Task("Feed Rex", now, category="feeding"))
     owner.get_pet("Milo").add_task(Task("Feed Milo", now, category="feeding"))
