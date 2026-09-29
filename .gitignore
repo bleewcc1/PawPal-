@@ -37,3 +37,6 @@ data/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Local Claude Code project skills
+**/SKILL.md

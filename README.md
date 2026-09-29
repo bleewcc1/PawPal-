@@ -29,6 +29,17 @@ any UI is built on top of it.
 python main.py
 ```
 
+## Running the tests
+
+```
+pip install -r requirements.txt
+pytest -q
+```
+
+`tests/` has one file per core class, exercising completion/overdue logic,
+recurrence, Owner's multi-pet task aggregation, and the Scheduler's
+priority ranking.
+
 ## Sample Output
 
 ```
